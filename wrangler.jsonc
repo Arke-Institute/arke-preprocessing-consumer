@@ -1,0 +1,58 @@
+{
+  "name": "arke-preprocessing-orchestrator",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-01-01",
+
+  // Queue consumer configuration
+  "queues": {
+    "consumers": [
+      {
+        "queue": "arke-preprocess-jobs",
+        "max_batch_size": 1,
+        "max_retries": 3,
+        "dead_letter_queue": "preprocess-dlq"
+      }
+    ]
+  },
+
+  // Durable Objects
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PREPROCESSING_DO",
+        "class_name": "PreprocessingDurableObject",
+        "script_name": "arke-preprocessing-orchestrator"
+      }
+    ]
+  },
+
+  // Migrations for Durable Objects
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["PreprocessingDurableObject"]
+    }
+  ],
+
+  // Environment variables (non-sensitive)
+  "vars": {
+    "FLY_APP_NAME": "arke-tiff-worker",
+    "FLY_WORKER_IMAGE": "registry.fly.io/arke-tiff-worker:latest",
+    "FLY_REGION": "ord",
+    "ORCHESTRATOR_URL": "https://arke-preprocessing.chim9763.workers.dev",
+    "WORKER_URL": "https://ingest.arke.institute",
+    "R2_BUCKET": "arke-staging",
+    "BATCH_SIZE_TIFF_CONVERSION": "1000",
+    "ALARM_DELAY_TIFF_CONVERSION": "5000",
+    "ALARM_DELAY_ERROR_RETRY": "30000",
+    "MAX_RETRY_ATTEMPTS": "5"
+  },
+
+  // Observability
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "arke-preprocessing-orchestrator",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Fly.io orchestrator for preprocessing batches via Durable Objects",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.20240529.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "wrangler": "^4.46.0"
+  }
+}
