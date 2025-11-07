@@ -1,7 +1,8 @@
 {
   "name": "arke-preprocessing-orchestrator",
   "main": "src/index.ts",
-  "compatibility_date": "2024-01-01",
+  "compatibility_date": "2025-10-03",
+  "compatibility_flags": ["nodejs_compat"],
 
   // Queue consumer configuration
   "queues": {
@@ -36,10 +37,10 @@
 
   // Environment variables (non-sensitive)
   "vars": {
-    "FLY_APP_NAME": "arke-tiff-worker",
-    "FLY_WORKER_IMAGE": "registry.fly.io/arke-tiff-worker:latest",
+    "FLY_APP_NAME": "preprocess-orchestrator-arke-institute",
+    "FLY_WORKER_IMAGE": "registry.fly.io/preprocess-orchestrator-arke-institute:deployment-01K9G7720V6C7AY0VH2F8FBBG6",
     "FLY_REGION": "ord",
-    "ORCHESTRATOR_URL": "https://arke-preprocessing.chim9763.workers.dev",
+    "ORCHESTRATOR_URL": "https://preprocessing-orchestrator.arke.institute",
     "WORKER_URL": "https://ingest.arke.institute",
     "R2_BUCKET": "arke-staging",
     "BATCH_SIZE_TIFF_CONVERSION": "1000",
@@ -54,5 +55,12 @@
     "logs": {
       "enabled": true
     }
-  }
+  },
+
+  "routes": [
+    {
+      "pattern": "preprocessing-orchestrator.arke.institute",
+      "custom_domain": true
+    }
+  ]
 }

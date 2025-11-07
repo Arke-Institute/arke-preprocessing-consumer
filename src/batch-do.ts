@@ -3,7 +3,7 @@
  * Orchestrates batch preprocessing through multiple phases
  */
 
-import type { DurableObject } from '@cloudflare/workers-types';
+import { DurableObject } from 'cloudflare:workers';
 import type { Env, loadConfig } from './config.js';
 import type { QueueMessage } from './types/queue.js';
 import type { BatchState, BatchStatus } from './types/state.js';
@@ -32,9 +32,8 @@ export interface StatusResponse {
 /**
  * Preprocessing Durable Object
  */
-export class PreprocessingDurableObject implements DurableObject {
+export class PreprocessingDurableObject extends DurableObject {
   private state: BatchState | null = null;
-  private ctx: DurableObjectState;
   private env: Env;
 
   // Phase registry
@@ -44,7 +43,7 @@ export class PreprocessingDurableObject implements DurableObject {
   ]);
 
   constructor(ctx: DurableObjectState, env: Env) {
-    this.ctx = ctx;
+    super(ctx, env);
     this.env = env;
   }
 
@@ -109,6 +108,13 @@ export class PreprocessingDurableObject implements DurableObject {
 
     if (!this.state) {
       console.error('[DO] Alarm fired but no state found');
+      return;
+    }
+
+    // If in ERROR or COMPLETED state, clear alarm and exit
+    if (this.state.status === 'ERROR' || this.state.status === 'COMPLETED') {
+      console.log(`[DO] Alarm fired in terminal state ${this.state.status}, clearing alarm`);
+      await this.ctx.storage.deleteAlarm();
       return;
     }
 
@@ -259,6 +265,7 @@ export class PreprocessingDurableObject implements DurableObject {
       // Mark as error but don't retry
       this.state!.status = 'ERROR';
       this.state!.error = `Worker callback failed: ${error.message}`;
+      await this.ctx.storage.deleteAlarm();
       await this.saveState();
     }
   }
@@ -350,6 +357,7 @@ export class PreprocessingDurableObject implements DurableObject {
       console.error(`[DO] Giving up after ${this.state!.phase_retry_count} retries`);
       this.state!.status = 'ERROR';
       this.state!.error = `Failed after ${this.state!.phase_retry_count} retries: ${error.message}`;
+      await this.ctx.storage.deleteAlarm();
       await this.saveState();
     } else {
       // Retry with exponential backoff
