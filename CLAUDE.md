@@ -27,10 +27,39 @@ npm run typecheck    # Run TypeScript type checking
 
 ### Testing Queue Messages
 
+**IMPORTANT:** Queue messages now reference a manifest stored in R2 instead of embedding file lists directly.
+
 ```bash
-# Send a test message to the queue
+# First, upload a test manifest to R2
+echo '{
+  "batch_id": "test-123",
+  "total_files": 1,
+  "total_bytes": 1000,
+  "directories": [
+    {
+      "directory_path": "/",
+      "processing_config": {"ocr": false, "describe": false, "pinax": true},
+      "file_count": 1,
+      "total_bytes": 1000,
+      "files": [
+        {
+          "r2_key": "staging/test-123/test.txt",
+          "logical_path": "/test.txt",
+          "file_name": "test.txt",
+          "file_size": 1000,
+          "content_type": "text/plain"
+        }
+      ]
+    }
+  ]
+}' > manifest.json
+
+wrangler r2 object put arke-staging/staging/test-123/_manifest.json --file=manifest.json
+
+# Then send the queue message with manifest reference
 wrangler queues send arke-preprocess-jobs --body '{
   "batch_id": "test-123",
+  "manifest_r2_key": "staging/test-123/_manifest.json",
   "r2_prefix": "staging/test-123/",
   "uploader": "test-user",
   "root_path": "/test",
@@ -38,8 +67,7 @@ wrangler queues send arke-preprocess-jobs --body '{
   "total_bytes": 1000,
   "uploaded_at": "2025-01-06T00:00:00Z",
   "finalized_at": "2025-01-06T00:00:00Z",
-  "metadata": {},
-  "directories": []
+  "metadata": {}
 }'
 ```
 
@@ -62,11 +90,17 @@ TIFF_CONVERSION → (future phases) → DONE
 ```
 
 **State lifecycle:**
-1. Queue consumer calls `startBatch()` → initializes state, schedules alarm
+1. Queue consumer calls `startBatch()` → fetches manifest from R2, initializes state, schedules alarm
 2. Alarm fires → `alarm()` executes current phase batch
 3. Phase spawns Fly machines → machines call back with results
 4. When phase complete → transition to next phase or finalize
 5. Finalization → callback to ingest worker with processed file list
+
+**Manifest Loading:**
+- Queue messages contain `manifest_r2_key` pointing to `_manifest.json` in R2
+- Durable Object fetches manifest on startup using `STAGING_BUCKET` binding
+- Manifest is stored in persistent DO state for retries/recovery
+- Errors (404, parse failures) throw exceptions that trigger queue retries
 
 ### Phase System
 
@@ -157,6 +191,12 @@ The `TiffConversionPhase` spawns ephemeral Fly machines:
 - **Class**: `PreprocessingDurableObject`
 - **ID strategy**: Named DOs using `batch_id` as key (ensures one DO per batch)
 
+### R2 Bucket Configuration
+
+- **Binding name**: `STAGING_BUCKET` (accessed via `env.STAGING_BUCKET`)
+- **Bucket**: `arke-staging`
+- **Usage**: Fetching batch manifests (`_manifest.json` files)
+
 ## Key Behaviors
 
 ### Idempotency
@@ -167,9 +207,11 @@ The `TiffConversionPhase` spawns ephemeral Fly machines:
 - Phase-level retries with exponential backoff (configurable via `MAX_RETRY_ATTEMPTS`)
 - After max retries, batch marked as ERROR and alarm cleared
 - Individual task failures tracked but don't fail entire batch
+- **Manifest errors**: Missing manifests (404) or parse errors throw exceptions → queue retries message
 
 ### File List Transformation
 - Original queue message preserved in `BatchState.queue_message`
+- Loaded manifest preserved in `BatchState.manifest` for recovery
 - Each phase's `transformFile()` method defines how files are transformed
 - **TIFF Conversion**: Preserves BOTH original TIFF and converted JPEG
   - Original TIFF: Tagged with `preprocessor_tags: ['TiffConverter:source']`
@@ -192,5 +234,51 @@ The `TiffConversionPhase` spawns ephemeral Fly machines:
 
 **DON'T modify for:**
 - Queue message format changes from ingest worker (types in `src/types/queue.ts` should match sender)
+- Manifest schema changes from ingest worker (types in `src/types/queue.ts` should match sender)
 - Fly worker implementation changes (this worker only spawns and receives callbacks)
 - R2 bucket changes (configure via `wrangler.jsonc`)
+
+## Queue Message Format
+
+The ingest worker sends queue messages with the following structure:
+
+```typescript
+interface QueueMessage {
+  batch_id: string;
+  manifest_r2_key: string;  // R2 key to _manifest.json file
+  r2_prefix: string;
+  uploader: string;
+  root_path: string;
+  parent_pi?: string;
+  total_files: number;
+  total_bytes: number;
+  uploaded_at: string;
+  finalized_at: string;
+  metadata: Record<string, any>;
+}
+```
+
+The manifest file at `manifest_r2_key` contains:
+
+```typescript
+interface BatchManifest {
+  batch_id: string;
+  directories: DirectoryGroup[];
+  total_files: number;
+  total_bytes: number;
+}
+
+interface DirectoryGroup {
+  directory_path: string;
+  processing_config: ProcessingConfig;
+  file_count: number;
+  total_bytes: number;
+  files: QueueFileInfo[];
+}
+```
+
+**Key changes from previous version:**
+- Queue message no longer embeds `directories` array
+- Instead, `manifest_r2_key` points to manifest stored in R2
+- This avoids Cloudflare Queue's 128KB message size limit
+- Manifest is fetched once during `startBatch()` and persisted in DO state

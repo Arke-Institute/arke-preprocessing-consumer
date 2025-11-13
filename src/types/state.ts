@@ -2,7 +2,7 @@
  * Batch state stored in Durable Object
  */
 
-import type { QueueMessage } from './queue.js';
+import type { QueueMessage, BatchManifest } from './queue.js';
 import type { ProcessableFile } from './file.js';
 
 export type BatchStatus =
@@ -81,6 +81,7 @@ export interface BatchState {
   status: BatchStatus;
 
   // Original queue message (preserved for reference)
+  // Contains manifest_r2_key to re-fetch manifest if needed
   queue_message: QueueMessage;
 
   // Current file list (updated after each phase completes)

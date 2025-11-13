@@ -7,6 +7,7 @@
  */
 export interface QueueMessage {
   batch_id: string;
+  manifest_r2_key: string;
   r2_prefix: string;
   uploader: string;
   root_path: string;
@@ -16,7 +17,16 @@ export interface QueueMessage {
   uploaded_at: string;
   finalized_at: string;
   metadata: Record<string, any>;
+}
+
+/**
+ * Batch manifest stored in R2 (referenced by manifest_r2_key)
+ */
+export interface BatchManifest {
+  batch_id: string;
   directories: DirectoryGroup[];
+  total_files: number;
+  total_bytes: number;
 }
 
 /**

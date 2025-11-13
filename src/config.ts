@@ -14,6 +14,7 @@ export interface Env {
   R2_SECRET_ACCESS_KEY: string;
   R2_BUCKET?: string;
   ARCHIVE_BUCKET?: string;
+  STAGING_BUCKET: R2Bucket;
 
   // Config vars
   FLY_TIFF_APP_NAME?: string;

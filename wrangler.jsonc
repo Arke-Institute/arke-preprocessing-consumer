@@ -16,7 +16,7 @@
     ]
   },
 
-  // Durable Objects
+  // Durable Objects - TEMPORARILY DISABLED FOR MIGRATION
   "durable_objects": {
     "bindings": [
       {
@@ -30,8 +30,16 @@
   // Migrations for Durable Objects
   "migrations": [
     {
-      "tag": "v1",
-      "new_classes": ["PreprocessingDurableObject"]
+      "tag": "v1-reset-2025-01",
+      "new_sqlite_classes": ["PreprocessingDurableObject"]
+    }
+  ],
+
+  // R2 bucket bindings
+  "r2_buckets": [
+    {
+      "binding": "STAGING_BUCKET",
+      "bucket_name": "arke-staging"
     }
   ],
 

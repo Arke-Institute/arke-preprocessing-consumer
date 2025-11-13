@@ -5,7 +5,7 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './config.js';
-import type { QueueMessage } from './types/queue.js';
+import type { QueueMessage, BatchManifest } from './types/queue.js';
 import type { BatchState, BatchStatus } from './types/state.js';
 import type { ProcessableFile } from './types/file.js';
 import type { Phase } from './phases/base.js';
@@ -31,7 +31,7 @@ export interface StatusResponse {
 }
 
 /**
- * Preprocessing Durable Object
+ * Preprocessing Durable Object (SQLite-backed)
  */
 export class PreprocessingDurableObject extends DurableObject<Env> {
   private state: BatchState | null = null;
@@ -60,10 +60,29 @@ export class PreprocessingDurableObject extends DurableObject<Env> {
     }
 
     console.log(`[DO] Starting batch ${queueMessage.batch_id}`);
+    console.log(`[DO] Fetching manifest from R2: ${queueMessage.manifest_r2_key}`);
 
-    // Convert queue message files to initial file list
+    // Fetch manifest from R2
+    const manifestObj = await this.env.STAGING_BUCKET.get(queueMessage.manifest_r2_key);
+    if (!manifestObj) {
+      const errorMsg = `Manifest not found in R2: ${queueMessage.manifest_r2_key}`;
+      console.error(`[DO] ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+
+    let manifest: BatchManifest;
+    try {
+      manifest = await manifestObj.json() as BatchManifest;
+      console.log(`[DO] Successfully loaded manifest with ${manifest.directories.length} directories`);
+    } catch (error) {
+      const errorMsg = `Failed to parse manifest JSON: ${error}`;
+      console.error(`[DO] ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+
+    // Convert manifest directories to initial file list
     const initialFiles: ProcessableFile[] = [];
-    for (const directory of queueMessage.directories) {
+    for (const directory of manifest.directories) {
       for (const file of directory.files) {
         initialFiles.push({
           r2_key: file.r2_key,
@@ -88,6 +107,7 @@ export class PreprocessingDurableObject extends DurableObject<Env> {
     console.log(`[DO] Discovered ${tasks.length} task(s) for ${firstPhase.name} phase`);
 
     // Initialize state
+    console.log(`[DO] Initializing state...`);
     this.state = {
       batch_id: queueMessage.batch_id,
       status: 'TIFF_CONVERSION',
@@ -104,12 +124,15 @@ export class PreprocessingDurableObject extends DurableObject<Env> {
       phase_retry_count: 0,
     };
 
+    console.log(`[DO] Saving state...`);
     await this.saveState();
+    console.log(`[DO] State saved successfully`);
 
     // If no tasks, go straight to DONE
     if (tasks.length === 0) {
       console.log(`[DO] No tasks to process, finalizing batch`);
       await this.finalizeBatch();
+      console.log(`[DO] Finalization complete`);
       return;
     }
 
